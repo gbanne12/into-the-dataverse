@@ -98,11 +98,11 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         console.log('button is clicked attempting to get forms');
 
-        const spinner = document.createElement('div');
-        spinner.setAttribute('id', 'spinner');
-        spinner.setAttribute('class', 'loader');
+        const formSpinner = document.createElement('div');
+        formSpinner.setAttribute('id', 'spinner');
+        formSpinner.setAttribute('class', 'loader');
         const formSection = document.getElementById('fields-section');
-        formSection.append(spinner);
+        formSection.append(formSpinner);
 
         const result = await chrome.runtime.sendMessage({
             url: currentDomain,
@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             action: 'getForms'
         });
 
-        spinner.remove();
+        formSpinner.remove();
 
         const forms = result.response;
         const formList = document.createElement('select');
@@ -175,6 +175,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             console.log('no existing mesage');
         }
 
+        const requestSpinner = document.createElement('div');
+        requestSpinner.setAttribute('id', 'spinner');
+        requestSpinner.setAttribute('class', 'loader');
+
+        const loadingSection = document.getElementById('loading');
+        loadingSection.appendChild(requestSpinner);
+
+
         const entityInput = document.getElementById('entity-input');
         const entityValue = entityInput.value;
 
@@ -202,6 +210,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             action: 'addRecords'
         });
 
+        requestSpinner.remove();
+        
         const resultMessage = document.createElement('span');
         resultMessage.setAttribute('id', 'result-message');
 
