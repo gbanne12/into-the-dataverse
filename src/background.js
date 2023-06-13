@@ -8,22 +8,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const recordsToAdd = request.quantity;
 
         if (request.action === 'getForms') {
-            console.log('we will try to get forms');
-            // Forms request
-            try {
-                const allFormsResponse = await fetch(`${environmentUrl}${webApiUrl}systemforms?$filter=objecttypecode eq '${entityName}' and type eq 2&$select=name,formid`);
-                const allFormsJson = await allFormsResponse.json();
-                const allformsArray = allFormsJson.value;
 
-                const forms = getForms(allformsArray);
+            try {
+                let forms = [];
+                forms =  await fetchForms(environmentUrl, entityName);
 
                 for (const form of forms) {
-                    const formResponse = await fetch(`${environmentUrl}${webApiUrl}systemforms(${form.formid})`);
-                    const formJson = await formResponse.json();
-                    const formXml = formJson["formxml"];
-                    form.formXml = formXml;
+                    form.formXml = await fetchFormXml(environmentUrl, form.formid);
                 }
-
                 sendResponse({ response: forms });
             } catch (error) {
                 sendResponse({ response: `Unable to get forms: ${error.message}` });
@@ -203,6 +195,30 @@ function getRequiredFields(metadataArray) {
     }
     return requiredFields;
 }
+
+
+// *** Fetch requests *** 
+
+async function fetchForms(environmentUrl, entityName) {
+    const allFormsResponse = await fetch(`${environmentUrl}${webApiUrl}systemforms?$filter=objecttypecode eq '${entityName}' and type eq 2&$select=name,formid`);
+    const allFormsJson = await allFormsResponse.json();
+    const allFormsArray = allFormsJson.value;
+
+    const forms = [];
+    for (let item = 0; item < allFormsArray.length; item++) {
+        const form = { name: allFormsArray[item].name, formid: allFormsArray[item].formid };
+        forms.push(form);
+    }
+    return forms;
+}
+
+async function fetchFormXml(environmentUrl, formId) {
+    const formResponse = await fetch(`${environmentUrl}${webApiUrl}systemforms(${formId})`);
+    const json = await formResponse.json();
+    return json["formxml"];
+}
+
+// end of new
 
 
 
