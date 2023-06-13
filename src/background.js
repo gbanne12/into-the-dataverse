@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             try {
                 let forms = [];
-                forms =  await fetchForms(environmentUrl, entityName);
+                forms = await fetchForms(environmentUrl, entityName);
 
                 for (const form of forms) {
                     form.formXml = await fetchFormXml(environmentUrl, form.formid);
@@ -23,27 +23,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         if (request.action === 'addRecords') {
-
             const isRequiredFieldsOnly = request.requiredOnly;
             const isFormFields = !request.requiredOnly && (request.form != "" || undefined);
 
             const requestBody = {};
 
             if (isRequiredFieldsOnly) {
-
                 let requiredFields = [];
-                // Metadata request
                 try {
-                    const metadataResponse = await fetch(`${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')/Attributes`);
-
-                    const metadataResponseJson = await metadataResponse.json();
-                    if (metadataResponseJson.error != null || undefined) {
-                        throw metadataResponseJson.error;
-                    }
-
-                    const metadataArray = metadataResponseJson.value;
-
-                    //const validForCreateFields = getValidForCreateFields(metadataArray);
+                    const metadataArray = await fetchMetadata(environmentUrl, entityName);
                     requiredFields = getRequiredFields(metadataArray);
 
                     for (const field of requiredFields) {
@@ -58,28 +46,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             } else if (isFormFields) {
 
-                // same as above
                 try {
-                    const metadataResponse = await fetch(`${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')/Attributes`);
-                    const metadataResponseJson = await metadataResponse.json();
-                    if (metadataResponseJson.error != null || undefined) {
-                        throw metadataResponseJson.error;
-                    }
-                    const metadataArray = metadataResponseJson.value;
-
+                    const metadataArray = await fetchMetadata(environmentUrl, entityName);
                     const allFields = request.form;
                     const formFields = allFields.split(',');
-                    console.log("All fields to attempt to enter...." + formFields)
-
-
                     formFields.forEach(formField => {
 
-                        const matchingField = metadataArray.find(field =>
-                            field.LogicalName === formField &&
-                            field.IsValidForCreate === true);
+                        const matchingField = metadataArray.find(
+                            field =>
+                                field.LogicalName === formField &&
+                                field.IsValidForCreate === true);
 
                         let attributeType;
-                        try {
+                        try {   //FIXME
                             attributeType = matchingField.AttributeType;
                         } catch (error) {
                             attributeType = undefined;
@@ -119,11 +98,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                 break;
                             case 'Picklist':
                                 (async () => {
-                                    const optionsSetEndpoint = `${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')/Attributes(LogicalName='${matchingField.LogicalName}')/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$select=LogicalName&$expand=GlobalOptionSet($select=Options)`;
-                                    const response = await fetch(optionsSetEndpoint);
-                                    const json = await response.json();
-                                    const label = json.GlobalOptionSet.Options[0].Value;
-                                    requestBody[formField] = label;
+                                    const optionSet = await fetchOptionSet(environmentUrl, entityName, matchingField.LogicalName);
+                                    requestBody[formField] = optionSet[0].Value;
                                 })();
                                 break;
                             case 'Lookup':
@@ -151,13 +127,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
             // POST request
             try {
-                const entityDefinitions = await fetch(`${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')`);
-                const entityDefinitionJson = await entityDefinitions.json();
-                const tableDataName = entityDefinitionJson.LogicalCollectionName;
-
-                console.log("********");
-                console.log(requestBody);
-                console.log("********");
+                const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
                 let postResponse;
                 for (let count = 0; count < recordsToAdd; count++) {
                     postResponse = await postData(environmentUrl + webApiUrl + tableDataName, requestBody);
@@ -215,14 +185,41 @@ async function fetchForms(environmentUrl, entityName) {
 async function fetchFormXml(environmentUrl, formId) {
     const formResponse = await fetch(`${environmentUrl}${webApiUrl}systemforms(${formId})`);
     const json = await formResponse.json();
-    return json["formxml"];
+    const formXml = json["formxml"];
+    return formXml;
+}
+
+async function fetchMetadata(environmentUrl, entityName) {
+    const metadataResponse = await fetch(`${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')/Attributes`);
+
+    const metadataResponseJson = await metadataResponse.json();
+    if (metadataResponseJson.error != null || undefined) {
+        throw metadataResponseJson.error;
+    }
+    const metadataArray = metadataResponseJson.value;
+    return metadataArray;
+}
+
+async function fetchOptionSet(environmentUrl, entityName, logicalName) {
+    const optionsSetEndpoint = `${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')/Attributes(LogicalName='${logicalName}')/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$select=LogicalName&$expand=GlobalOptionSet($select=Options)`;
+    const response = await fetch(optionsSetEndpoint);
+    const json = await response.json();
+    const optionSet = json.GlobalOptionSet.Options;
+    return optionSet;
+}
+
+async function fetchLogicalCollectionName(environmentUrl, entityName) {
+    const entityDefinitions = await fetch(`${environmentUrl}${webApiUrl}EntityDefinitions(LogicalName='${entityName}')`);
+    const entityDefinitionJson = await entityDefinitions.json();
+    const logicalCollectionName = entityDefinitionJson.LogicalCollectionName;
+    return logicalCollectionName;
 }
 
 // end of new
 
 
 
-function getValidForCreateFields(metadataArray) {
+/* function getValidForCreateFields(metadataArray) {
     const validForCreateFields = [];
     for (let item = 0; item < metadataArray.length; item++) {
 
@@ -232,16 +229,16 @@ function getValidForCreateFields(metadataArray) {
         }
     }
     return validForCreateFields;
-}
+} */
 
-function getForms(metadataArray) {
+/* function getForms(metadataArray) {
     const forms = [];
     for (let item = 0; item < metadataArray.length; item++) {
         const form = { name: metadataArray[item].name, formid: metadataArray[item].formid };
         forms.push(form);
     }
     return forms;
-}
+} */
 
 
 async function postData(url = "", data = {}) {
