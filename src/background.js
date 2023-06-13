@@ -50,70 +50,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     const metadataArray = await fetchMetadata(environmentUrl, entityName);
                     const allFields = request.form;
                     const formFields = allFields.split(',');
+
                     formFields.forEach(formField => {
-
-                        const matchingField = metadataArray.find(
-                            field =>
-                                field.LogicalName === formField &&
-                                field.IsValidForCreate === true);
-
-                        let attributeType;
-                        try {   //FIXME
-                            attributeType = matchingField.AttributeType;
-                        } catch (error) {
-                            attributeType = undefined;
-                            console.log(`No attribute type, will not attempt to populate ${matchingField}`);
-                        }
-
-
-                        console.log("processing field..." + matchingField);
-                        switch (attributeType) {
-                            case undefined:
-                                break;
-                            case 'String':
-                                if (matchingField.Format == 'Email') {
-                                    requestBody[formField] = formField + Date.now() + "@gmail.com";
-                                } else {
-                                    requestBody[formField] = formField.slice(0, matchingField.MaxLength);
-                                }
-                                break;
-                            case 'DateTime':
-                                const dateTime = new Date().toISOString();
-                                const dateOnly = dateTime.slice(0, 10)
-
-                                if (matchingField.Format === 'DateOnly') {
-                                    requestBody[formField] = dateOnly;
-                                } else {
-                                    requestBody[formField] = dateTime;
-                                }
-                                break;
-                            case 'Boolean':
-                                requestBody[formField] = Math.random() < 0.5;
-                                break;
-                            case 'Integer':
-                                requestBody[formField] = Math.floor(Math.random() * (100) + 1);
-                                break;
-                            case 'Double':
-                                requestBody[formField] = Math.random() * (100 - 1) + 1;
-                                break;
-                            case 'Picklist':
-                                (async () => {
-                                    const optionSet = await fetchOptionSet(environmentUrl, entityName, matchingField.LogicalName);
-                                    requestBody[formField] = optionSet[0].Value;
-                                })();
-                                break;
-                            case 'Lookup':
-                                console.log(matchingField.Targets);
-                                break;
-                            case 'Money':
-                                requestBody[formField] = generateRandomMoney(0, 500);
-                                break;
-                            case 'Memo':
-                                requestBody[formField] = generateRandomMemo(140);
-                            default:
-                                console.log(`${matchingField.LogicalName} not any of the expected types.  Is a ${matchingField.AttributeType}; `)
-                        }
-
+                        const matchingField = metadataArray.find(field =>
+                            field.LogicalName === formField &&
+                            field.IsValidForCreate === true);
+                        (async () => {
+                            populateRequestBody(environmentUrl, entityName, matchingField, requestBody);
+                        })();
                     });
 
                 } catch (error) {
@@ -125,7 +69,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
 
 
-            // POST request
+            // send POST request
             try {
                 const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
                 let postResponse;
@@ -215,31 +159,63 @@ async function fetchLogicalCollectionName(environmentUrl, entityName) {
     return logicalCollectionName;
 }
 
-// end of new
-
-
-
-/* function getValidForCreateFields(metadataArray) {
-    const validForCreateFields = [];
-    for (let item = 0; item < metadataArray.length; item++) {
-
-        if (metadataArray[item].IsValidForCreate === true) {
-            const fieldInfo = { value: metadataArray[item].LogicalName, type: metadataArray[item].AttributeType };
-            validForCreateFields.push(fieldInfo);
-        }
+async function populateRequestBody(environmentUrl, entityName, matchingField, requestBody) {
+    let attributeType;
+    try {  
+        attributeType = matchingField.AttributeType;
+    } catch (error) {
+        attributeType = undefined;
+        console.log(`No attribute type, will not attempt to populate ${matchingField}`);
     }
-    return validForCreateFields;
-} */
 
-/* function getForms(metadataArray) {
-    const forms = [];
-    for (let item = 0; item < metadataArray.length; item++) {
-        const form = { name: metadataArray[item].name, formid: metadataArray[item].formid };
-        forms.push(form);
+    console.log("processing field..." + matchingField);
+    switch (attributeType) {
+        case undefined:
+            break;
+        case 'String':
+            if (matchingField.Format == 'Email') {
+                requestBody[formField] = formField + Date.now() + "@gmail.com";
+            } else {
+                requestBody[formField] = formField.slice(0, matchingField.MaxLength);
+            }
+            break;
+        case 'DateTime':
+            const dateTime = new Date().toISOString();
+            const dateOnly = dateTime.slice(0, 10)
+
+            if (matchingField.Format === 'DateOnly') {
+                requestBody[formField] = dateOnly;
+            } else {
+                requestBody[formField] = dateTime;
+            }
+            break;
+        case 'Boolean':
+            requestBody[formField] = Math.random() < 0.5;
+            break;
+        case 'Integer':
+            requestBody[formField] = Math.floor(Math.random() * (100) + 1);
+            break;
+        case 'Double':
+            requestBody[formField] = Math.random() * (100 - 1) + 1;
+            break;
+        case 'Picklist':
+            (async () => {
+                const optionSet = await fetchOptionSet(environmentUrl, entityName, matchingField.LogicalName);
+                requestBody[formField] = optionSet[0].Value;
+            })();
+            break;
+        case 'Lookup':
+            console.log(matchingField.Targets);
+            break;
+        case 'Money':
+            requestBody[formField] = generateRandomMoney(0, 500);
+            break;
+        case 'Memo':
+            requestBody[formField] = generateRandomMemo(140);
+        default:
+            console.log(`${matchingField.LogicalName} not any of the expected types.  Is a ${matchingField.AttributeType}; `)
     }
-    return forms;
-} */
-
+}
 
 async function postData(url = "", data = {}) {
     const requestInit = {
