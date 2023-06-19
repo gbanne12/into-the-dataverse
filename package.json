@@ -1,0 +1,21 @@
+{
+  "name": "bannerga.chatgpt",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://gbanne12@github.com/gbanne12/into-the-dataverse.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gbanne12/into-the-dataverse/issues"
+  },
+  "homepage": "https://github.com/gbanne12/into-the-dataverse#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.35.0"
+  }
+}
