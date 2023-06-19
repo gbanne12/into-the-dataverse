@@ -1,3 +1,6 @@
+let currentDomain;
+let userInput;
+
 async function getCurrentUrl() {
     let queryOptions = { active: true, lastFocusedWindow: true };
     // `tab` will either be a `tabs.Tab` instance or `undefined`.
@@ -34,16 +37,111 @@ function showDomainError(document) {
     wrongTabMessage.setAttribute('class', 'warning');
     environmentSection.append(wrongTabMessage);
 
-    document.getElementById('fetchButton').disabled = true;
+    document.getElementById('fetch-button').disabled = true;
+}
+
+function onEnvironmentUpdate(event) {
+    environmentInput = document.getElementById('environment');
+    userInput = environmentInput.value;
+    if (userInput.includes('dynamics.com')) {
+        try {
+            const existingTabMessage = document.getElementsByClassName('warning');
+            existingTabMessage[0].remove();
+            document.getElementById('fetch-button').disabled = false;
+            currentDomain = userInput;
+        } catch (error) {
+            console.log(error);
+        }
+    } else {
+        try {
+            const existingTabMessage = document.getElementsByClassName('warning');
+            if (existingTabMessage.length < 1) {
+                showDomainError(document);
+            }
+        } catch (error) {
+            console.log(error);
+        }
+    }
+}
+
+function removeFormLists() {
+    const existingLists = document.getElementsByTagName('select');
+    if (existingLists != null) {
+        for (list of existingLists) {
+            list.remove();
+        }
+    }
+}
+
+function removeFormTextBox() {
+    const textarea = document.getElementById('field-text-box');
+    if (textarea != null) {
+        textarea.remove();
+    }
+}
+
+function removeResultMessages() {
+    const existingResultMessage = document.getElementById('result-message');
+    if (existingResultMessage != null) {
+            message.remove();
+    }
+}
+
+function appendSpinner(id, sectionId) {
+    const spinner = document.createElement('div');
+    spinner.setAttribute('id', id);
+    spinner.setAttribute('class', 'loader');
+    spinner.setAttribute('alt', 'loading-spinner');
+    const formSection = document.getElementById(sectionId);
+    formSection.append(spinner);
+}
+
+function removeSpinner(id) {
+    const spinner = document.getElementById(id);
+    spinner.remove();
+}
+
+async function populateFormListWithXML(forms, formList) {
+    let dataFieldNames;
+    for (let count = 0; count < forms.length; count++) {
+        // create select list
+        const element = document.createElement('option');
+        element.text = forms[count].name;
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(forms[count].formXml, 'text/xml');
+        const tagsElement = xmlDoc.querySelector('tabs');
+        const controlElements = tagsElement.querySelectorAll('control[datafieldname]');
+        dataFieldNames = Array.from(controlElements).map(function (control) {
+            return control.getAttribute('datafieldname');
+        });
+        // assign the item the full field list as value attribute 
+        element.value = dataFieldNames;
+
+        // This is why it isnt showin after initial fetch
+        // need to update the the disPLAYED VALUE of the text box as the first item in the array 
+        /*        if (count == 0) {
+                    const fieldsTextBox = document.getElementById('textarea');
+                    for (const name of dataFieldNames) {
+                        fieldsTextBox.value = fieldsTextBox.value + name + "\n"
+                    } */
+
+        formList.add(element);
+    }
+    return formList;
 }
 
 
 document.addEventListener('DOMContentLoaded', async function () {
     const currentUrl = await getCurrentUrl();
-    const currentDomain = parseEnvironmentFromUrl(currentUrl)
+    let currentDomain = parseEnvironmentFromUrl(currentUrl);
 
-    if (currentDomain != "" || undefined) {
-        const environmentInput = document.getElementById('environment');
+    const environmentInput = document.getElementById('environment');
+    let userInput;
+
+    environmentInput.addEventListener('input', onEnvironmentUpdate);
+
+    if (currentDomain != "" || undefined && environment.value === "") {
         environmentInput.value = currentDomain;
     } else {
         showDomainError(document);
@@ -53,72 +151,33 @@ document.addEventListener('DOMContentLoaded', async function () {
     // form radio buttons listeners
     const requiredFieldsButton = document.getElementById('required-fields-input');
     requiredFieldsButton.addEventListener('click', async () => {
-
-        try {
-            const allLists = document.getElementsByTagName('select');
-            for (list of allLists) {
-                list.remove();
-            }
-        } catch {
-            console.log('no existing form list');
-        }
-
-        try {
-            const textarea = document.getElementById('field-text-box');
-            textarea.remove();
-        } catch {
-            console.log('no existing text area');
-        }
-
-        try {
-            const existingResultMessage = document.getElementById('result-message');
-            existingResultMessage.remove();
-        } catch {
-            console.log('no existing mesage');
-        }
+        removeFormLists();
+        removeResultMessages();
+        removeFormTextBox();
     });
 
     const formsButton = document.getElementById('form-fields-input');
     formsButton.addEventListener('click', async () => {
-
-        const allLists = document.getElementsByTagName('select');
-        for (list of allLists) {
-            list.remove();
-        }
-
-        try {
-            const existingResultMessage = document.getElementById('result-message');
-            existingResultMessage.remove();
-        } catch {
-            console.log('no existing mesage');
-        }
+        removeFormLists();
+        removeResultMessages();
+        const spinnerId = 'spinner'
+        appendSpinner(spinnerId, 'fields-section');
 
         const entityInput = document.getElementById('entity-input');
         const entityValue = entityInput.value;
-
-        console.log('button is clicked attempting to get forms');
-
-        const formSpinner = document.createElement('div');
-        formSpinner.setAttribute('id', 'spinner');
-        formSpinner.setAttribute('class', 'loader');
-        const formSection = document.getElementById('fields-section');
-        formSection.append(formSpinner);
-
-        const result = await chrome.runtime.sendMessage({
+        const formResult = await chrome.runtime.sendMessage({
             url: currentDomain,
             entity: entityValue,
             action: 'getForms'
         });
 
-        formSpinner.remove();
-
-        const forms = result.response;
-        const formList = document.createElement('select');
-        formList.setAttribute('id', 'forms-list');
+        removeSpinner(spinnerId);
 
         const fieldsTextBox = document.createElement('textarea');
         fieldsTextBox.setAttribute('id', 'field-text-box');
 
+        const formList = document.createElement('select');
+        formList.setAttribute('id', 'forms-list');
         formList.addEventListener('change', (event) => {
             fieldsTextBox.value = "";
             const fieldString = event.target.value;
@@ -128,44 +187,35 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
         })
 
-        let dataFieldNames;
-        for (let count = 0; count < forms.length; count++) {
-            const element = this.createElement('option');
-            element.text = forms[count].name;
+        const xml = formResult.response;
+        await populateFormListWithXML(xml, formList);
 
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(forms[count].formXml, 'text/xml');
-            const tagsElement = xmlDoc.querySelector('tabs');
-            const controlElements = tagsElement.querySelectorAll('control[datafieldname]');
-            dataFieldNames = Array.from(controlElements).map(function (control) {
-                return control.getAttribute('datafieldname');
-            });
-            element.value = dataFieldNames;
-
-            if (count == 0) {
-                for (const name of dataFieldNames) {
-                    fieldsTextBox.value = fieldsTextBox.value + name + "\n"
-                }
-            }
-
-            formList.add(element);
-        }
-
-        
+        const formSection = document.getElementById('fields-section');
         formSection.append(formList);
-
         formSection.append(fieldsTextBox);
-        console.log('dataFieldNames:', dataFieldNames);
 
+        if (fieldsTextBox.value == "" || undefined) {
+            const listValue = formList.value;
+            fieldsTextBox.value = listValue.replaceAll(',', '\n')
+        }
     })
 
     // post request listener
     const fetchButton = document.getElementById('fetch-button');
     fetchButton.addEventListener('click', async () => {
 
-        if (currentDomain == "" || undefined) {
+        const environmentInput = document.getElementById('environment');
+        const userInput = environmentInput.value;
+
+
+        console.log('current domain is: ' + currentDomain);
+        if (currentDomain == "" || undefined && userInput == "" || undefined) {
             console.log("Incorrect domain, not sending request")
-            return;
+            //showDomainError();
+        }
+
+        if (currentDomain == "" || undefined && userInput != "" || undefined) {
+            currentDomain = userInput;
         }
 
         try {
@@ -211,7 +261,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
 
         requestSpinner.remove();
-        
+
         const resultMessage = document.createElement('span');
         resultMessage.setAttribute('id', 'result-message');
 
