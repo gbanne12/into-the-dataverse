@@ -5,6 +5,13 @@ async function getCurrentUrl() {
     return tab.url;
 }
 
+async function getCurrentTab() {
+    const queryOptions = { active: true, currentWindow: true };
+    const [tab] = await chrome.tabs.query(queryOptions);
+    return tab;
+}
+
+
 /***
  * Returns the top level domain if a dynamics environment is opened in current tab
  * Otherwise it returns am empty string if on unmatching domain
@@ -19,6 +26,30 @@ function parseEnvironmentFromUrl(url) {
         console.log(environment);
     }
     return environment;
+}
+
+function parseEntityFromUrl(url) {
+    const formSubString = 'pagetype=entityrecord';
+    const viewSubString = 'pagetype=entitylist'
+
+
+    if (url.includes(formSubString)) {
+        const entityStartText = '&etn=';
+        const entityStartIndex = url.indexOf(entityStartText) + entityStartText.length;
+        const recordIdStartText = '&id=';
+        const entityEndIndex = url.indexOf(recordIdStartText);
+        const entity = url.substring(entityStartIndex, entityEndIndex);
+        return entity;
+    } else if (url.includes(viewSubString)) {
+        const entityStartText = '&etn=';
+        const entityStartIndex = url.indexOf(entityStartText) + entityStartText.length;
+        const viewStartText = '&viewid'
+        const entityEndIndex = url.indexOf(viewStartText);
+        const entity = url.substring(entityStartIndex, entityEndIndex);
+        return entity;
+    } else {
+        return 'contact';
+    }
 }
 
 /***
@@ -39,6 +70,9 @@ function showDomainError(document) {
 
 
 document.addEventListener('DOMContentLoaded', async function () {
+    const entityInput = document.getElementById('entity-input');
+    entityInput.value = parseEntityFromUrl(await getCurrentUrl());
+
     const currentUrl = await getCurrentUrl();
     const currentDomain = parseEnvironmentFromUrl(currentUrl)
 
@@ -48,7 +82,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     } else {
         showDomainError(document);
     }
-
 
     // form radio buttons listeners
     const requiredFieldsButton = document.getElementById('required-fields-input');
@@ -151,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             formList.add(element);
         }
 
-        
+
         formSection.append(formList);
 
         formSection.append(fieldsTextBox);
@@ -192,13 +225,21 @@ document.addEventListener('DOMContentLoaded', async function () {
         const requiredFieldsInput = document.getElementById('required-fields-input');
         const requiredOnly = requiredFieldsInput.checked;
 
+
         const formFieldsInput = document.getElementById('form-fields-input');
         const formFieldsList = document.getElementById('forms-list');
         let formDataFields;
-        if (formFieldsInput.checked) {
-            formDataFields = formFieldsList.value;
+
+        if (formFieldsList != null || formFieldsList != undefined) {
+            const formTextBox = document.getElementById('field-text-box');
+            formDataFields = formTextBox.value;
         }
 
+        if (formFieldsInput.checked == true) {
+            formDataFields = formFieldsList.value;
+        } else {
+            formDataFields = null;
+        }
 
         console.log('button is clicked, sending details to service worker: ' + currentDomain + entityValue + quantityValue);
         const result = await chrome.runtime.sendMessage({
@@ -211,11 +252,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
 
         requestSpinner.remove();
-        
+
         const resultMessage = document.createElement('span');
         resultMessage.setAttribute('id', 'result-message');
-
         resultMessage.innerHTML = result.response;
+
+
         const bottomSection = document.getElementById('bottom-section');
         bottomSection.append(resultMessage);
     });
