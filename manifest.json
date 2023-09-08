@@ -3,7 +3,9 @@
   "name": "Into the Dataverse",
   "version": "1.0",
   "permissions": [
-    "tabs"
+    "tabs",
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": ["https://*.dynamics.com/"],
   "action": {

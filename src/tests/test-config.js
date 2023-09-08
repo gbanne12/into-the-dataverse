@@ -1,1 +1,0 @@
-export const dynamicsUrl = "https://b2-alba.crm11.dynamics.com";
