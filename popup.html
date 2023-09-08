@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Fetch and Log Extension</title>
+    <script src="popup.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <h2>Into the Dataverse</h2>
+
+    <div class="form">
+
+        <div id="environmentSection" class="environmentSection">
+            <label for="environment"> Environment: </label>
+            <input type="text" id="environment" name="environment"></input>
+        </div>
+
+        <div class="entitySection">
+            <label for="entityName"> Entity (logical name): </label>
+            <input type="text" id="entity-input" name="entityName" value="contact"></input>
+        </div>
+
+        <div id="fields-section" class="fields-section">
+            <label for="fields-radio"> Select fields to populate: </label>
+            <p><input id="required-fields-input" name="fields-radio" type="radio" checked> Required only</input> </p>
+            <p><input id="form-fields-input" name="fields-radio" type="radio"> All on form </input> </p>
+        </div>
+
+        <div class="quantitySection">
+            <label for="records"> Number of records to add:</label>
+            <input id="quantity-input" name="records" type="number" value="1" min="1" max="99"></input>
+        </div>
+
+        <div id="bottom-section">
+            <div id="loading"> </div>
+            <button id="fetch-button">Add</button>
+        </div>
+
+    </div>
+</body>
+
+</html>
