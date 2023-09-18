@@ -75,7 +75,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     console.log("All fields to attempt to enter...." + formFields)
 
 
-                    const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
+
 
                     let fieldsForPostrequest = [];
                     formFields.forEach(formField => {
@@ -95,17 +95,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             const schemaName = fieldsForPostrequest[count].SchemaName;
 
                             if (value !== undefined) {
-                                if (attributeType === 'Customer' && fieldName === 'customerid') {
-                                    requestBody[`customerid_contact@odata.bind`] = `/contacts(${value})`;
-
-                                } else if (attributeType === 'Customer' && fieldName != 'customerid') {
-                                    const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, 'contact');
-                                    requestBody[`${navigationPropertyName}@odata.bind`] = `/${tableDataName}(${value})`;
+                                if (attributeType === 'Customer') {
+                                    const referencedEntity = 'contact';
+                                    const property = await buildODataValue(fieldName, referencedEntity, value);
+                                    requestBody[property.key] = property.value;
 
                                 } else if (attributeType === 'Lookup') {
                                     const referencedEntity = fieldsForPostrequest[count].Targets[0]
-                                    const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, referencedEntity);
-                                    requestBody[`${navigationPropertyName}@odata.bind`] = `/${value}`;
+                                    const property = await buildODataValue(fieldName, referencedEntity, value);
+                                    requestBody[property.key] = property.value;
+
                                 } else {
                                     requestBody[fieldName] = value;
                                 }
@@ -118,6 +117,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     }
 
 
+                    const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
                     for (let count = 0; count < recordsToAdd; count++) {
                         const response = await postData(environmentUrl + webApiUrl + tableDataName, requestBody);
                         if (response.ok) {
@@ -192,13 +192,7 @@ async function getInputValueForField(matchingField) {
     } else if (attributeType === 'Lookup') {
         const lookupEntity = matchingField.Targets[0];
         const id = await fetchLookupIdentifier(environmentUrl, lookupEntity);
-
-        if (id === undefined) {
-            value = undefined;
-        } else {
-            const collectionName = await fetchLogicalCollectionName(environmentUrl, lookupEntity);
-            value = `${collectionName}(${id})`;
-        }
+        return id === undefined ? undefined : id;
 
     } else if (attributeType === 'Money') {
         value = generateRandomMoney(0, 500);
@@ -287,7 +281,7 @@ async function fetchLookupIdentifier(environmentUrl, entityName) {
     return id;
 }
 
-async function fetchNavigationPropertyName(environmentUrl, referencingAttribute, referencedEntity) {   
+async function fetchNavigationPropertyName(environmentUrl, referencingAttribute, referencedEntity) {
     const relationshipMetadataUrl = `${environmentUrl}${webApiUrl}RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`;
     const relationshipDefinitions = await fetch(`${relationshipMetadataUrl}?$filter=ReferencingAttribute eq '${referencingAttribute}' and ReferencedEntity eq '${referencedEntity}'`);
 
@@ -318,6 +312,12 @@ async function fetchPicklistValues(field) {
     return values;
 }
 
+async function buildODataValue(fieldName, referencedEntity, value) {
+    const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, referencedEntity);
+    const collectionName = await fetchLogicalCollectionName(environmentUrl, referencedEntity);
+    return { key: `${navigationPropertyName}@odata.bind`, value: `/${collectionName}(${value})` };
+}
+
 async function postData(url = "", data = {}) {
     const requestInit = {
         method: "POST",
@@ -333,6 +333,7 @@ async function postData(url = "", data = {}) {
     const response = await fetch(url, requestInit);
     return response;
 }
+
 
 function generateRandomMoney(min, max) {
     const decimalPrecision = 2;
