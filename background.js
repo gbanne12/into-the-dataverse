@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             var matches = regExp.exec(uri);
                             var newId = matches[1];
                             console.log(newId);
-                            sendResponse({ response: 'New record with id ' + newId + ' added'});
+                            sendResponse({ response: 'New record with id ' + newId + ' added' });
                         } else {
                             return response.json().then((json) => {
                                 sendResponse({ response: json.error.message, json: requestBody });
@@ -80,8 +80,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     let fieldsForPostrequest = [];
                     formFields.forEach(formField => {
                         const matchingField = metadataArray.find(function (record) {
-                                return record.LogicalName === formField && record.IsValidForCreate === true;
-                            }
+                            return record.LogicalName === formField && record.IsValidForCreate === true;
+                        }
                         );
                         fieldsForPostrequest.push(matchingField);
 
@@ -95,10 +95,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             const schemaName = fieldsForPostrequest[count].SchemaName;
 
                             if (value !== undefined) {
-                                if (attributeType === 'Customer' && fieldName != 'customerid') {
-                                    requestBody[schemaName + '_contact@odata.bind'] = "/contacts(" + value + ")";
-                                } else if (attributeType === 'Customer' && fieldName === 'customerid') {
-                                    requestBody[fieldName + '_contact@odata.bind'] = "/contacts(" + value + ")";
+                                if (attributeType === 'Customer' && fieldName === 'customerid') {
+                                    requestBody[`customerid_contact@odata.bind`] = `/contacts(${value})`;
+
+                                } else if (attributeType === 'Customer' && fieldName != 'customerid') {
+                                    const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, 'contact');
+                                    requestBody[`${navigationPropertyName}@odata.bind`] = `/${tableDataName}(${value})`;
+
+                                } else if (attributeType === 'Lookup') {
+                                    const referencedEntity = fieldsForPostrequest[count].Targets[0]
+                                    const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, referencedEntity);
+                                    requestBody[`${navigationPropertyName}@odata.bind`] = `/${value}`;
                                 } else {
                                     requestBody[fieldName] = value;
                                 }
@@ -119,7 +126,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             var matches = regExp.exec(uri);
                             var newId = matches[1];
                             console.log(newId);
-                            sendResponse({ response: 'Record with id ' + newId + 'was added'});
+                            sendResponse({ response: 'Record with id ' + newId + 'was added' });
                         } else {
                             return response.json().then((json) => {
                                 sendResponse({ response: json.error.message, json: requestBody });
@@ -142,9 +149,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function getInputValueForField(matchingField) {
-
-
-
     let value;
     let attributeType;
     try {
@@ -176,7 +180,7 @@ async function getInputValueForField(matchingField) {
     } else if (attributeType === 'Double') {
         value = Math.random() * (100 - 1) + 1;
 
-    } else if (attributeType === 'Customer' && matchingField.IsValidForForm === 'true') {
+    } else if (attributeType === 'Customer') {
         const id = await fetchLookupIdentifier(environmentUrl, 'contact');
         value = id;
 
@@ -185,13 +189,16 @@ async function getInputValueForField(matchingField) {
         const randomIndex = 1;
         value = values[randomIndex].Value;
 
-    } else if (attributeType === 'Lookup' && matchingField.IsValidForForm === 'true') {
-        if (matchingField.LogicalName === 'originatingleadid') {
-            console.log('original lead id is a ' + matchingField.AttributeType);
-        }
+    } else if (attributeType === 'Lookup') {
         const lookupEntity = matchingField.Targets[0];
         const id = await fetchLookupIdentifier(environmentUrl, lookupEntity);
-        value = id;
+
+        if (id === undefined) {
+            value = undefined;
+        } else {
+            const collectionName = await fetchLogicalCollectionName(environmentUrl, lookupEntity);
+            value = `${collectionName}(${id})`;
+        }
 
     } else if (attributeType === 'Money') {
         value = generateRandomMoney(0, 500);
@@ -271,13 +278,21 @@ async function fetchLookupIdentifier(environmentUrl, entityName) {
     const logicalCollectionName = await fetchLogicalCollectionName(environmentUrl, entityName);
     const response = await fetch(`${environmentUrl}${webApiUrl}${logicalCollectionName}`);
     const json = await response.json();
-   const randomIndex = 1;
+    const randomIndex = 1;
     const chosenRecord = json.value[randomIndex];
-     if (chosenRecord === undefined) {
+    if (chosenRecord === undefined) {
         return undefined;
-    } 
+    }
     const id = chosenRecord[entityName + 'id'];
     return id;
+}
+
+async function fetchNavigationPropertyName(environmentUrl, referencingAttribute, referencedEntity) {   
+    const relationshipMetadataUrl = `${environmentUrl}${webApiUrl}RelationshipDefinitions/Microsoft.Dynamics.CRM.OneToManyRelationshipMetadata`;
+    const relationshipDefinitions = await fetch(`${relationshipMetadataUrl}?$filter=ReferencingAttribute eq '${referencingAttribute}' and ReferencedEntity eq '${referencedEntity}'`);
+
+    const json = await relationshipDefinitions.json();
+    return json.value[0].ReferencingEntityNavigationPropertyName;
 }
 
 async function fetchOptionSet(environmentUrl, entityName, logicalName) {
