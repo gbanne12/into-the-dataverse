@@ -1,3 +1,5 @@
+import './data-robot.js';
+
 const webApiUrl = "/api/data/v9.2/";
 let environmentUrl;
 let entityName;
@@ -11,31 +13,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         if (request.action === 'getForms') {
             try {
-                const forms = await fetchForms(environmentUrl, entityName);
+                const entityForms = await fetchForms(environmentUrl, entityName);
 
-                for (const form of forms) {
+                for (const form of entityForms) {
                     form.formXml = await fetchFormXml(environmentUrl, form.formid)
                 }
+                sendResponse({ response: entityForms });
 
-                sendResponse({ response: forms });
             } catch (error) {
                 sendResponse({ response: `Unable to get forms: ${error.message}` });
             }
         }
 
         if (request.action === 'addRecords') {
-
-            const isRequiredFieldsOnly = request.requiredOnly;
+            const isRequiredFields = request.requiredOnly;
             const isFormFields = !request.requiredOnly && (request.form != "" || undefined);
-
             const requestBody = {};
 
-            if (isRequiredFieldsOnly) {
-
-                let requiredFields = [];
+            if (isRequiredFields) {
                 try {
                     const metadataArray = await fetchMetadata(environmentUrl, entityName);
-                    requiredFields = getRequiredFields(metadataArray);
+                    const requiredFields = getRequiredFields(metadataArray);
 
                     for (const field of requiredFields) {
                         if (field.type === 'String') {
@@ -43,48 +41,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         }
                     }
 
-                    const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
+                    const collectionName = await fetchLogicalCollectionName(environmentUrl, entityName);
                     for (let count = 0; count < recordsToAdd; count++) {
-                        const response = await postData(environmentUrl + webApiUrl + tableDataName, requestBody);
-                        if (response.ok) {
-                            var uri = response.headers.get("OData-EntityId");
-                            var regExp = /\(([^)]+)\)/;
-                            var matches = regExp.exec(uri);
-                            var newId = matches[1];
-                            console.log(newId);
-                            sendResponse({ response: 'New record with id ' + newId + ' added' });
-                        } else {
-                            return response.json().then((json) => {
-                                sendResponse({ response: json.error.message, json: requestBody });
-                            });
-                        }
-                        sendResponse({ response: response.ok });
+                        const response = await postData(environmentUrl + webApiUrl + collectionName, requestBody);
+                        sendResponse({ response: `Post request sent: ${response} ` });
                     }
 
                 } catch (error) {
-                    sendResponse({ response: `Unable to get required fields metadata: ${error.message}` });
+                    sendResponse({ response: `Unable to add required fields: ${error.message}` });
                 }
 
             } else if (isFormFields) {
-
                 try {
-                    const metadataArray = await fetchMetadata(environmentUrl, entityName);
+                    const entityMetadata = await fetchMetadata(environmentUrl, entityName);
+                    const userSelectedForm = request.form;
+                    const formFields = userSelectedForm.split(',');
 
-                    const allFields = request.form;
-                    const formFields = allFields.split(',');
-                    console.log("All fields to attempt to enter...." + formFields)
-
-
-
-
-                    let fieldsForPostrequest = [];
-                    formFields.forEach(formField => {
-                        const matchingField = metadataArray.find(function (record) {
-                            return record.LogicalName === formField && record.IsValidForCreate === true;
-                        }
-                        );
-                        fieldsForPostrequest.push(matchingField);
-
+                    const fieldsForPostrequest = entityMetadata.filter(record => {
+                        return formFields.includes(record.LogicalName) && record.IsValidForCreate === true;
                     });
 
                     for (let count = 0; count < fieldsForPostrequest.length; count++) {
@@ -92,15 +66,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                         try {
                             const fieldName = fieldsForPostrequest[count].LogicalName;
                             const attributeType = fieldsForPostrequest[count].AttributeType;
-                            const schemaName = fieldsForPostrequest[count].SchemaName;
+
+                            const isCustomerField = attributeType === 'Customer';
+                            const isLookupField = attributeType === 'Lookup';
 
                             if (value !== undefined) {
-                                if (attributeType === 'Customer') {
+                                if (isCustomerField) {
                                     const referencedEntity = 'contact';
                                     const property = await buildODataValue(fieldName, referencedEntity, value);
                                     requestBody[property.key] = property.value;
 
-                                } else if (attributeType === 'Lookup') {
+                                } else if (isLookupField) {
                                     const referencedEntity = fieldsForPostrequest[count].Targets[0]
                                     const property = await buildODataValue(fieldName, referencedEntity, value);
                                     requestBody[property.key] = property.value;
@@ -111,36 +87,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             }
 
                         } catch (error) {
-                            console.log("no logicalname found, not including in request");
+                            console.log(`no logicalname found for field ${JSON.stringify(fieldsForPostrequest[count])}, not including in request`);
                         }
-
                     }
 
-
-                    const tableDataName = await fetchLogicalCollectionName(environmentUrl, entityName);
+                    const collectionName = await fetchLogicalCollectionName(environmentUrl, entityName);
                     for (let count = 0; count < recordsToAdd; count++) {
-                        const response = await postData(environmentUrl + webApiUrl + tableDataName, requestBody);
-                        if (response.ok) {
-                            var uri = response.headers.get("OData-EntityId");
-                            var regExp = /\(([^)]+)\)/;
-                            var matches = regExp.exec(uri);
-                            var newId = matches[1];
-                            console.log(newId);
-                            sendResponse({ response: 'Record with id ' + newId + 'was added' });
-                        } else {
-                            return response.json().then((json) => {
-                                sendResponse({ response: json.error.message, json: requestBody });
-                            });
-                        }
-                        sendResponse({ response: response.ok });
+                        const response = await postData(environmentUrl + webApiUrl + collectionName, requestBody);
+                        sendResponse({ response: `Post request sent: ${response} ` });
                     }
 
                 } catch (error) {
-                    sendResponse({ response: `Error with request: ${error.message}`, json: requestBody });
+                    sendResponse({ response: `Error with form field attempt : ${error.message}`, json: requestBody });
                 }
 
             } else {
-                sendResponse({ response: 'Error: No form to populate' });
+                sendResponse({ response: 'Error: No form was found. Pick one from the list.' });
             }
         }
     })();
@@ -318,6 +280,7 @@ async function buildODataValue(fieldName, referencedEntity, value) {
     return { key: `${navigationPropertyName}@odata.bind`, value: `/${collectionName}(${value})` };
 }
 
+/* Returns the new record Id if successfull, or error message if not  */
 async function postData(url = "", data = {}) {
     const requestInit = {
         method: "POST",
@@ -331,7 +294,18 @@ async function postData(url = "", data = {}) {
         body: JSON.stringify(data)
     }
     const response = await fetch(url, requestInit);
-    return response;
+
+    if (response.ok) {
+        const uri = response.headers.get("OData-EntityId");
+        const regExp = /\(([^)]+)\)/;
+        const matches = regExp.exec(uri);
+        const newId = matches[1];
+        console.log(newId);
+        return newId;
+    } else {
+        const json = await response.json();
+        return json.error.message;
+    }
 }
 
 
