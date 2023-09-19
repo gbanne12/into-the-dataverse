@@ -1,12 +1,9 @@
-import './data-robot.js';
-
 const webApiUrl = "/api/data/v9.2/";
 let environmentUrl;
 let entityName;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async function () {
-
         environmentUrl = request.url;
         entityName = request.entity;
         const recordsToAdd = request.quantity;
@@ -14,23 +11,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'getForms') {
             try {
                 const entityForms = await fetchForms(environmentUrl, entityName);
-
                 for (const form of entityForms) {
                     form.formXml = await fetchFormXml(environmentUrl, form.formid)
                 }
                 sendResponse({ response: entityForms });
-
             } catch (error) {
                 sendResponse({ response: `Unable to get forms: ${error.message}` });
             }
         }
 
         if (request.action === 'addRecords') {
-            const isRequiredFields = request.requiredOnly;
-            const isFormFields = !request.requiredOnly && (request.form != "" || undefined);
+            const isRequiredFieldSelection = request.requiredOnly;
+            const isFormFieldsSelection = !request.requiredOnly && (request.form != undefined);
             const requestBody = {};
 
-            if (isRequiredFields) {
+            if (isRequiredFieldSelection) {
                 try {
                     const metadataArray = await fetchMetadata(environmentUrl, entityName);
                     const requiredFields = getRequiredFields(metadataArray);
@@ -51,7 +46,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ response: `Unable to add required fields: ${error.message}` });
                 }
 
-            } else if (isFormFields) {
+            } else if (isFormFieldsSelection) {
                 try {
                     const entityMetadata = await fetchMetadata(environmentUrl, entityName);
                     const userSelectedForm = request.form;
@@ -73,12 +68,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             if (value !== undefined) {
                                 if (isCustomerField) {
                                     const referencedEntity = 'contact';
-                                    const property = await buildODataValue(fieldName, referencedEntity, value);
+                                    const property = await fetchODataValue(fieldName, referencedEntity, value);
                                     requestBody[property.key] = property.value;
 
                                 } else if (isLookupField) {
                                     const referencedEntity = fieldsForPostrequest[count].Targets[0]
-                                    const property = await buildODataValue(fieldName, referencedEntity, value);
+                                    const property = await fetchODataValue(fieldName, referencedEntity, value);
                                     requestBody[property.key] = property.value;
 
                                 } else {
@@ -106,67 +101,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         }
     })();
-
     return true;
 });
-
-async function getInputValueForField(matchingField) {
-    let value;
-    let attributeType;
-    try {
-        attributeType = matchingField.AttributeType;
-    } catch (error) {
-        attributeType = undefined;
-        console.log(`No attribute type, will not attempt to populate ${matchingField}`);
-    }
-
-
-    if (attributeType === undefined) {
-        // do nothing
-    } else if (attributeType === 'String') {
-        const emailAddress = matchingField.LogicalName + Date.now() + "@gmail.com"
-        const fieldName = matchingField.LogicalName.slice(0, matchingField.MaxLength);
-        value = matchingField.Format == 'Email' ? emailAddress : fieldName;
-
-    } else if (attributeType === 'DateTime') {
-        const dateTime = new Date().toISOString();
-        const dateOnly = dateTime.slice(0, 10);
-        value = matchingField.Format === 'DateOnly' ? dateOnly : dateTime;
-
-    } else if (attributeType === 'Boolean') {
-        value = Math.random() < 0.5;
-
-    } else if (attributeType === 'Integer') {
-        value = Math.floor(Math.random() * (100) + 1);
-
-    } else if (attributeType === 'Double') {
-        value = Math.random() * (100 - 1) + 1;
-
-    } else if (attributeType === 'Customer') {
-        const id = await fetchLookupIdentifier(environmentUrl, 'contact');
-        value = id;
-
-    } else if (attributeType === 'Picklist') {
-        const values = await fetchPicklistValues(matchingField);
-        const randomIndex = 1;
-        value = values[randomIndex].Value;
-
-    } else if (attributeType === 'Lookup') {
-        const lookupEntity = matchingField.Targets[0];
-        const id = await fetchLookupIdentifier(environmentUrl, lookupEntity);
-        return id === undefined ? undefined : id;
-
-    } else if (attributeType === 'Money') {
-        value = generateRandomMoney(0, 500);
-
-    } else if (attributeType === 'Memo') {
-        value = generateRandomMemo(140);
-
-    } else {
-        console.log(`${matchingField.LogicalName} not any of the expected types. Is a ${matchingField.AttributeType};`);
-    }
-    return value;
-}
 
 
 function getRequiredFields(metadataArray) {
@@ -186,17 +122,71 @@ function getRequiredFields(metadataArray) {
     return requiredFields;
 }
 
-
-function getValidForCreateFields(metadataArray) {
-    const validForCreateFields = [];
-    for (let item = 0; item < metadataArray.length; item++) {
-
-        if (metadataArray[item].IsValidForCreate === true) {
-            const fieldInfo = { value: metadataArray[item].LogicalName, type: metadataArray[item].AttributeType };
-            validForCreateFields.push(fieldInfo);
-        }
+async function getInputValueForField(matchingField) {
+    let value;
+    let attributeType;
+    try {
+        attributeType = matchingField.AttributeType;
+    } catch (error) {
+        attributeType = undefined;
     }
-    return validForCreateFields;
+
+    // If else allows awaiting values to be returned from fetch calls when required
+    if (attributeType === undefined) {
+        console.log(`No attribute type, will not attempt to populate field ${matchingField.LogicalName}`);
+
+    } else if (attributeType === 'DateTime') {
+        const dateTime = new Date().toISOString();
+        const date = dateTime.slice(0, 10);
+        value = matchingField.Format === 'DateOnly' ? date : dateTime;
+
+    } else if (attributeType === 'Boolean') {
+        value = Math.random() < 0.5;
+
+    } else if (attributeType === 'Integer') {
+        value = Math.floor(Math.random() * (100) + 1);
+
+    } else if (attributeType === 'Double') {
+        value = Math.random() * (100 - 1) + 1;
+
+    } else if (attributeType === 'Money') {
+        value = generateRandomMoney(0, 500);
+
+    } else if (attributeType === 'Memo') {
+        value = generateRandomMemo(140);
+
+    } else if (attributeType === 'String') {
+        const isPhoneField = matchingField.FormatName.Value == 'Phone';
+        const isEmailField = matchingField.Format == 'Email';
+
+        if (isPhoneField) {
+            value = Math.floor(Math.random() * (99999999999 - 10000000000) + 10000000000).toString();
+        } else if (isEmailField) {
+            const emailAddress = matchingField.LogicalName + Date.now() + "@gmail.com"
+            value = emailAddress;
+        } else {
+            const textValue = matchingField.LogicalName.slice(0, matchingField.MaxLength);
+            value = textValue;
+        }
+
+    } else if (attributeType === 'Customer') {
+        const id = await fetchLookupIdentifier(environmentUrl, 'contact');
+        value = id;
+
+    } else if (attributeType === 'Picklist') {
+        const values = await fetchPicklistValues(matchingField);
+        const randomIndex = values.length > 1 ? Math.floor(Math.random() * (values.length - 1) + 1) : 0;
+        value = values[randomIndex].Value;
+
+    } else if (attributeType === 'Lookup') {
+        const lookupEntity = matchingField.Targets[0];
+        const id = await fetchLookupIdentifier(environmentUrl, lookupEntity);
+        return id === undefined ? undefined : id;
+
+    } else {
+        console.log(`${matchingField.LogicalName} not any of the expected types. Is a ${matchingField.AttributeType};`);
+    }
+    return value;
 }
 
 async function fetchForms(environmentUrl, entityName) {
@@ -234,8 +224,10 @@ async function fetchLookupIdentifier(environmentUrl, entityName) {
     const logicalCollectionName = await fetchLogicalCollectionName(environmentUrl, entityName);
     const response = await fetch(`${environmentUrl}${webApiUrl}${logicalCollectionName}`);
     const json = await response.json();
-    const randomIndex = 1;
-    const chosenRecord = json.value[randomIndex];
+    const recordsArray = json.value;
+    const size = recordsArray.length;
+    const randomIndex = size > 1 ? Math.floor(Math.random() * (size - 1) + 1) : 0;
+    const chosenRecord = recordsArray[randomIndex];
     if (chosenRecord === undefined) {
         return undefined;
     }
@@ -274,7 +266,7 @@ async function fetchPicklistValues(field) {
     return values;
 }
 
-async function buildODataValue(fieldName, referencedEntity, value) {
+async function fetchODataValue(fieldName, referencedEntity, value) {
     const navigationPropertyName = await fetchNavigationPropertyName(environmentUrl, fieldName, referencedEntity);
     const collectionName = await fetchLogicalCollectionName(environmentUrl, referencedEntity);
     return { key: `${navigationPropertyName}@odata.bind`, value: `/${collectionName}(${value})` };
